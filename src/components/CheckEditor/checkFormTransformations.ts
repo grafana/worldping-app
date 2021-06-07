@@ -29,6 +29,8 @@ import {
   AlertSensitivity,
   TCPQueryResponse,
   TLSConfig,
+  TracerouteSettings,
+  TracerouteSettingsFormValues,
   HTTPCompressionAlgo,
 } from 'types';
 
@@ -41,6 +43,7 @@ import {
   fallbackCheck,
   ALERT_SENSITIVITY_OPTIONS,
   HTTP_COMPRESSION_ALGO_OPTIONS,
+  DNS_RESPONSE_MATCH_OPTIONS,
 } from 'components/constants';
 import { checkType, fromBase64, toBase64 } from 'utils';
 import isBase64 from 'is-base64';
@@ -89,6 +92,16 @@ export function fallbackSettings(t: CheckType): Settings {
         tcp: {
           ipVersion: IpVersion.V4,
           tls: false,
+        },
+      };
+    }
+    case CheckType.Traceroute: {
+      return {
+        traceroute: {
+          firstHop: 1,
+          maxHops: 64,
+          retries: 3,
+          maxUnknownHops: 10,
         },
       };
     }
@@ -258,7 +271,8 @@ const getDnsValidations = (validations: GetDnsValidationArgs): DnsValidationForm
       formValues.push({
         expression,
         inverted: false,
-        responseMatch: selectableValueFrom(responseMatch),
+        responseMatch:
+          DNS_RESPONSE_MATCH_OPTIONS.find(({ value }) => value === responseMatch) ?? DNS_RESPONSE_MATCH_OPTIONS[0],
       });
     });
 
@@ -266,7 +280,8 @@ const getDnsValidations = (validations: GetDnsValidationArgs): DnsValidationForm
       formValues.push({
         expression,
         inverted: true,
-        responseMatch: selectableValueFrom(responseMatch),
+        responseMatch:
+          DNS_RESPONSE_MATCH_OPTIONS.find(({ value }) => value === responseMatch) ?? DNS_RESPONSE_MATCH_OPTIONS[0],
       });
     });
     return formValues;
@@ -286,8 +301,19 @@ const getDnsSettingsFormValues = (settings: Settings): DnsSettingsFormValues => 
     validations: getDnsValidations({
       [ResponseMatchType.Answer]: dnsSettings.validateAnswerRRS,
       [ResponseMatchType.Authority]: dnsSettings.validateAuthorityRRS,
-      [ResponseMatchType.Additional]: dnsSettings.validateAdditionalRRS,
+      [ResponseMatchType.Additional]: dnsSettings.validateAditionalRRS,
     }),
+  };
+};
+
+const getTracerouteSettingsFormValues = (settings: Settings): TracerouteSettingsFormValues => {
+  const tracerouteSettings = settings.traceroute ?? (fallbackSettings(CheckType.Traceroute) as TracerouteSettings);
+
+  return {
+    firstHop: String(tracerouteSettings.firstHop),
+    maxHops: String(tracerouteSettings.maxHops),
+    retries: String(tracerouteSettings.retries),
+    maxUnknownHops: String(tracerouteSettings.maxUnknownHops),
   };
 };
 
@@ -300,6 +326,8 @@ const getFormSettingsForCheck = (settings: Settings): SettingsFormValues => {
       return { tcp: getTcpSettingsFormValues(settings) };
     case CheckType.DNS:
       return { dns: getDnsSettingsFormValues(settings) };
+    case CheckType.Traceroute:
+      return { traceroute: getTracerouteSettingsFormValues(settings) };
     case CheckType.PING:
     default:
       return { ping: getPingSettingsFormValues(settings) };
@@ -312,6 +340,7 @@ const getAllFormSettingsForCheck = (): SettingsFormValues => {
     tcp: getTcpSettingsFormValues(fallbackSettings(CheckType.TCP)),
     dns: getDnsSettingsFormValues(fallbackSettings(CheckType.DNS)),
     ping: getPingSettingsFormValues(fallbackSettings(CheckType.PING)),
+    traceroute: getTracerouteSettingsFormValues(fallbackSettings(CheckType.Traceroute)),
   };
 };
 
@@ -522,7 +551,7 @@ const getPingSettings = (
   };
 };
 
-type DnsValidations = Pick<DnsSettings, 'validateAdditionalRRS' | 'validateAnswerRRS' | 'validateAuthorityRRS'>;
+type DnsValidations = Pick<DnsSettings, 'validateAditionalRRS' | 'validateAnswerRRS' | 'validateAuthorityRRS'>;
 
 const getDnsValidationsFromFormValues = (validations: DnsValidationFormValue[]): DnsValidations =>
   validations.reduce<DnsValidations>(
@@ -531,7 +560,7 @@ const getDnsValidationsFromFormValues = (validations: DnsValidationFormValue[]):
       const responseMatch = getValueFromSelectable(validation.responseMatch);
       switch (responseMatch) {
         case ResponseMatchType.Additional:
-          acc.validateAdditionalRRS![destinationName].push(validation.expression);
+          acc.validateAditionalRRS![destinationName].push(validation.expression);
           break;
         case ResponseMatchType.Answer:
           acc.validateAnswerRRS![destinationName].push(validation.expression);
@@ -551,7 +580,7 @@ const getDnsValidationsFromFormValues = (validations: DnsValidationFormValue[]):
         failIfMatchesRegexp: [],
         failIfNotMatchesRegexp: [],
       },
-      validateAdditionalRRS: {
+      validateAditionalRRS: {
         failIfMatchesRegexp: [],
         failIfNotMatchesRegexp: [],
       },
@@ -578,6 +607,20 @@ const getDnsSettings = (
   };
 };
 
+const getTracerouteSettings = (
+  settings: TracerouteSettingsFormValues | undefined,
+  defaultSettings: TracerouteSettingsFormValues | undefined
+): TracerouteSettings => {
+  const fallbackValues = fallbackSettings(CheckType.Traceroute).traceroute as TracerouteSettings;
+  const updatedSettings = settings ?? defaultSettings ?? fallbackValues;
+  return {
+    firstHop: parseInt(String(updatedSettings.firstHop), 10),
+    maxHops: parseInt(String(updatedSettings.maxHops), 10),
+    retries: parseInt(String(updatedSettings.retries), 10),
+    maxUnknownHops: parseInt(String(updatedSettings.maxUnknownHops), 10),
+  };
+};
+
 const getSettingsFromFormValues = (formValues: Partial<CheckFormValues>, defaultValues: CheckFormValues): Settings => {
   const checkType = getValueFromSelectable(formValues.checkType ?? defaultValues.checkType);
   switch (checkType) {
@@ -589,6 +632,12 @@ const getSettingsFromFormValues = (formValues: Partial<CheckFormValues>, default
       return { dns: getDnsSettings(formValues.settings?.dns, defaultValues.settings.dns) };
     case CheckType.PING:
       return { ping: getPingSettings(formValues.settings?.ping, defaultValues.settings.ping) };
+    case CheckType.Traceroute:
+      return {
+        traceroute: {
+          ...getTracerouteSettings(formValues.settings?.traceroute, defaultValues.settings.traceroute),
+        },
+      };
     default:
       throw new Error(`Check type of ${checkType} is invalid`);
   }

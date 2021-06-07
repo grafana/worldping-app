@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { Field } from '@grafana/ui';
 import CheckProbes from './CheckProbes';
 import { InstanceContext } from 'contexts/InstanceContext';
-import { Probe } from 'types';
+import { Probe, CheckType } from 'types';
 import { SliderInput } from 'components/SliderInput';
 import { Subheader } from 'components/Subheader';
 import { useFormContext, Controller } from 'react-hook-form';
@@ -17,8 +17,14 @@ interface Props {
 
 export const ProbeOptions = ({ frequency, timeout, isEditor, probes }: Props) => {
   const [availableProbes, setAvailableProbes] = useState<Probe[]>([]);
-  const { control, errors } = useFormContext();
+  const {
+    control,
+    watch,
+    formState: { errors },
+  } = useFormContext();
   const { instance } = useContext(InstanceContext);
+
+  const checkType = watch('checkType').value;
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -38,16 +44,19 @@ export const ProbeOptions = ({ frequency, timeout, isEditor, probes }: Props) =>
       <Subheader>Probe options</Subheader>
 
       <Controller
-        as={CheckProbes}
         control={control}
         name="probes"
-        valueName="probes"
         rules={{ validate: validateProbes }}
-        probes={probes}
-        availableProbes={availableProbes}
-        isEditor={isEditor}
-        invalid={errors.probes}
-        error={errors.probes?.message}
+        render={({ field }) => (
+          <CheckProbes
+            {...field}
+            probes={probes}
+            availableProbes={availableProbes}
+            isEditor={isEditor}
+            invalid={errors.probes}
+            error={errors.probes?.message}
+          />
+        )}
       />
       <Field
         label="Frequency"
@@ -57,12 +66,12 @@ export const ProbeOptions = ({ frequency, timeout, isEditor, probes }: Props) =>
         error={errors.frequency?.message}
       >
         <SliderInput
-          rules={{ validate: validateFrequency }}
+          validate={(value) => validateFrequency(value, checkType)}
           name="frequency"
           prefixLabel={'Every'}
           suffixLabel={'seconds'}
-          min={10.0}
-          max={120.0}
+          min={checkType === CheckType.Traceroute ? 60.0 : 10.0}
+          max={checkType === CheckType.Traceroute ? 240 : 120.0}
           defaultValue={frequency / 1000}
         />
       </Field>
@@ -75,9 +84,9 @@ export const ProbeOptions = ({ frequency, timeout, isEditor, probes }: Props) =>
       >
         <SliderInput
           name="timeout"
-          rules={{ validate: validateTimeout }}
+          validate={(value) => validateTimeout(value, checkType)}
           defaultValue={timeout / 1000}
-          max={10.0}
+          max={checkType === CheckType.Traceroute ? 30.0 : 10.0}
           min={1.0}
           step={0.5}
           suffixLabel="seconds"
